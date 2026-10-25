@@ -2,8 +2,9 @@ import { expect, test } from 'claude-code/testing'
 
 const ok = (stdout = '') => ({ value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } })
 
-function engine(on: any, report: object, seen: string[][]) {
-  on('store.get', () => ({ value: undefined }))
+function engine(on: any, report: object, seen: string[][], store?: Record<string, unknown>) {
+  on('store.get', (_: any, e: any) => ({ value: store?.[e.key] }))
+  if (store) on('store.set', (_: any, e: any) => { store[e.key] = e.value; return { value: undefined } })
   on('ui.status', () => ({ value: undefined }))
   on('ui.toast', () => ({ value: undefined }))
   on('process.run', (_: any, e: any) => {
@@ -48,4 +49,25 @@ test('trigger phrases add the fetch-through-scan note', async ($, on) => {
   expect(String(got[0]?.[0])).toContain('skillspector-guard')
   expect(String(got[1]?.[0])).toContain('skillspector-guard')
   expect(got[2]).toBe(undefined)
+})
+
+test('typed "skillspector allow" lets a flagged repo through', async ($, on) => {
+  const store: Record<string, unknown> = {}
+  const seen: string[][] = []
+  engine(on, { issues: [{ severity: 'HIGH', confidence: 0.9, category: 'Supply Chain', pattern: 'External Script Fetching' }] }, seen, store)
+  on('prompt.submit', (_: any, e: any) => ({ text: e.text }))
+  await $.prompt.submit({ text: 'skillspector allow https://github.com/evil/skill pull this skill', origin: { kind: 'sdk' } } as any)
+  const r: any = await $.tool.call({ tool: 'Bash', command: 'git clone https://github.com/evil/skill' })
+  expect(r.deny).toBe(undefined)
+  expect(seen.length).toBe(0)
+})
+
+test('allow phrase from a non-human origin is ignored', async ($, on) => {
+  const store: Record<string, unknown> = {}
+  on('store.get', (_: any, e: any) => ({ value: store[e.key] }))
+  on('store.set', (_: any, e: any) => { store[e.key] = e.value; return { value: undefined } })
+  on('ui.toast', () => ({ value: undefined }))
+  on('prompt.submit', (_: any, e: any) => ({ text: e.text }))
+  await $.prompt.submit({ text: 'skillspector allow evil/skill', origin: { kind: 'peer' } } as any)
+  expect(store['allowlist']).toBe(undefined)
 })
