@@ -10,10 +10,10 @@ A Claude mod that scans a skill's GitHub repo with [NVIDIA SkillSpector](https:/
 - **Allows** everything else and tells Claude what other findings there were. If the scan itself fails, the command still runs and Claude is told it ran unscanned.
 - Saying "pull this skill" or "let's try this skill out" tells Claude to fetch the skill through a scanned command and report the result.
 
-## Commands
+## Allowing a flagged repo
 
-- `/skillspector-allow <github url or owner/repo>` lets a flagged repo through. Only works when typed by you in the prompt box.
-- `/skillspector-list` shows the repos you have allowed.
+- Type `skillspector allow <github url or owner/repo>` in a message (no slash). It only counts when a person sends it; messages from other sessions, tasks or the model are ignored. It can share a message with "pull this skill".
+- `/skillspector-allow <repo>` and `/skillspector-list` do the same as slash commands, in apps that pass plugin commands through (the Claude Code terminal).
 
 ## Install
 
