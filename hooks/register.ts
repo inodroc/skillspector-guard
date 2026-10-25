@@ -9,11 +9,12 @@ const DANGER =
   /prompt injection|hidden instruction|supply chain|external script|malware|obfuscat|exfiltrat|credential|harvest|backdoor|reverse shell/i
 const ALLOW_KEY = 'allowlist'
 const TRIGGER = /\b(pull|grab|get|install)\s+(this|that|the)\s+skill\b|\blet'?s\s+try\s+(this|that|the)\s+skill\b/i
+const ALLOW_PHRASE = /\bskillspector[\s-]+allow\s+(\S+)/i
 const TRIGGER_NOTE =
   'skillspector-guard: the user wants to fetch a skill. Find its GitHub repo (from the message, a linked post, or by searching), ' +
   'then fetch it with a Bash `git clone --depth 1 <repo url>` (or `npx skills add <repo>`) so the SkillSpector hook scans it first. ' +
   'Never fetch it another way (WebFetch, curl, manual file writes) to skip the scan. Report the scan result: blocked findings, or the scan note. ' +
-  'If blocked, show the findings and stop; only the user can run /skillspector-allow.'
+  'If blocked, show the findings and stop; only the user can allow it by typing: skillspector allow <repo>.'
 const SCAN_TIMEOUT = 9 * 60_000
 
 type Issue = {
@@ -28,9 +29,9 @@ type Issue = {
 // Pull the repo a command would fetch: git clone, npx skills add, pip/uv git+.
 function targetOf(cmd: string): string | undefined {
   const patterns = [
-    /\bgit\s+clone\b(?:\s+-{1,2}[\w-]+(?:[ =](?!https?:|git@)\S+)?)*\s+(\S+)/,
-    /\bskills\s+add\s+(\S+)/,
-    /\bgit\+(https?:\/\/\S+)/,
+    /(?:^|[;&|(]\s*|\n\s*)git\s+clone\b(?:\s+-{1,2}[\w-]+(?:[ =](?!https?:|git@)\S+)?)*\s+(\S+)/,
+    /(?:^|[;&|(]\s*|\n\s*)(?:npx\s+(?:-y\s+)?)?skills\s+add\s+(\S+)/,
+    /(?:^|[;&|(]\s*|\n\s*)(?:pip3?|uv|uvx|pipx)\b[^;&|\n]*\bgit\+(https?:\/\/\S+)/,
   ]
   for (const p of patterns) {
     const m = cmd.match(p)
@@ -65,9 +66,25 @@ export const register: Register = on => {
   })
 
   // "pull this skill" / "let's try this skill out" → fetch through Bash so the guard scans it.
-  on('prompt.submit', ($, e, next) => {
-    if (e.command || !TRIGGER.test(e.text)) return next(e)
-    return next({ ...e, context: [...(e.context ?? []), TRIGGER_NOTE] })
+  // "skillspector allow <repo>" typed by the person (not a slash command, so it
+  // works in apps that don't pass plugin slash commands through). Only human
+  // origins count; the model can't submit prompts.
+  on('prompt.submit', async ($, e, next) => {
+    if (e.command) return next(e)
+    const notes: string[] = []
+    const human = !e.isMeta && ['composer', 'bridge', 'sdk'].includes(e.origin?.kind)
+    const allow = e.text.match(ALLOW_PHRASE)
+    if (allow?.[1] && human) {
+      const t = normalize(allow[1])
+      if (t) {
+        const list = ((await $.store.get(ALLOW_KEY)) as string[] | undefined) ?? []
+        await $.store.set(ALLOW_KEY, [...new Set([...list, t.toLowerCase()])])
+        void $.ui.toast(`SkillSpector will let ${t} through`)
+        notes.push(`skillspector-guard: the user just allowed ${t}; the scan will let it through now. Tell them it was allowed.`)
+      }
+    }
+    if (TRIGGER.test(e.text)) notes.push(TRIGGER_NOTE)
+    return notes.length ? next({ ...e, context: [...(e.context ?? []), ...notes] }) : next(e)
   })
 
   on('command.run', { command: 'skillspector-allow' }, async ($, e) => {
@@ -140,7 +157,7 @@ export const register: Register = on => {
         deny:
           `SkillSpector blocked ${target}: ${blockers.length} high-severity finding(s).\n` +
           blockers.slice(0, 8).map(fmt).join('\n') +
-          `\nShow these to the user. Do not retry or work around this. If they review it and still want it, they type /skillspector-allow ${target}`,
+          `\nShow these to the user. Do not retry or work around this. If they review it and still want it, they type: skillspector allow ${target}`,
       }
     }
 
