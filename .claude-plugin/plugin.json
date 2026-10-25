@@ -1,0 +1,6 @@
+{
+  "name": "skillspector-guard",
+  "version": "0.1.0",
+  "description": "Scans GitHub repos and skills with NVIDIA SkillSpector before Claude clones or installs them; blocks high-severity injection, supply-chain and malware findings.",
+  "license": "MIT"
+}

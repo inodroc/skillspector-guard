@@ -1,0 +1,11 @@
+{
+  "name": "skillspector-guard",
+  "owner": { "name": "inodroc" },
+  "plugins": [
+    {
+      "name": "skillspector-guard",
+      "source": "./",
+      "description": "Scans GitHub repos and skills with NVIDIA SkillSpector before Claude clones or installs them."
+    }
+  ]
+}
